@@ -1,0 +1,281 @@
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Books App</title>
+  <script src="https://unpkg.com/react@15.7.0/dist/react.min.js"></script>
+  <script src="https://unpkg.com/react-dom@15.7.0/dist/react-dom.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@6.26.1/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+</body>
+<script>
+  function _transformUrl(urlObj) {
+    const FACTOR = 4;
+    const {origin, pathname} = urlObj;
+    const [_, width, height, random] = pathname.split('/');
+    const newWidth = width/FACTOR, newHeight = height/FACTOR;
+    return `${origin}/${newWidth}/${newHeight}`;
+  }
+
+  function _calcPages(bookCount, booksPerPage = 10) {
+    // Provide "secondary" default of 10 for 'perPageCnt' arg, to account for 0
+    return (bookCount === 0) ? 1 : Math.ceil(bookCount / booksPerPage);
+  }
+
+  function _buildBook(book) {
+    const {author, description, id, image, isbn, published, title} = book;
+
+    // reconstruct image url
+    const url = new URL(image);
+    const newUrl = _transformUrl(url) +'/' +isbn;
+
+    // 'key' necessary for React to properly account for each row
+    return (
+      <div key={id} className='book'>
+        <img src={newUrl} />
+        <div className='book__meta'>
+          <div className='book__meta-title'>{title}</div>
+          <div className='book__meta-origins'>By {author} | {published}</div>
+          <div className='book__meta-desc'>Description: {description}</div>
+        </div>
+      </div>
+    );
+  }
+
+  function FetchControls(props) {
+    // per-page quantities, sort by publish date asc/desc, toggle List | Grid, date range inputs, phrase search
+
+    const {booksPerPage, changeFn} = props;
+    const options = [10, 20, 30, 50, 100];
+
+    return (
+      <section className="fetch-controls">
+        <label for="per-page-selector">Books to View per Page:</label>
+        <select name="per-page-selector" onChange={changeFn}>
+          {options.map(value => <option value={value} selected={booksPerPage === value}>{value}</option>)}
+        </select>
+      </section>
+    );
+  }
+
+  function BookList(props) {
+    const {books, buildFn} = props;
+    return (
+      <section className='book-list'>
+        {props.books.map(buildFn)}
+      </section>
+    );
+  }
+
+  function PageControls(props) {
+    const {changePageFn, totalPages, pageNum} = props;
+    const links = [];
+    let idx = 1;
+
+    while(idx <= totalPages) {
+      let className = 'page-link';
+      let link, leftBtn, rightBtn;
+
+      if (pageNum === idx) {
+        link = <div className='page-link set'>{idx}</div>;
+      } else {
+        link = <a href='#' className='page-link' data-page={idx} onClick={changePageFn}>{idx}</a>;
+      }
+
+      links.push(link);
+      idx++;
+    }
+
+    return (
+      <section className='page-controls'>
+        <button className='page-btn' data-page={pageNum - 1} onClick={changePageFn} disabled={pageNum === 1}>{'<'}</button>
+        {links}
+        <button className='page-btn' data-page={pageNum + 1} onClick={changePageFn} disabled={pageNum === totalPages}>{'>'}</button>
+      </section>
+    );
+  }
+
+  class App extends React.Component {
+    constructor(props) {
+      super(props);
+      this.state = {
+        books: [],
+        pageNum: 1,
+        totalPages: 1,
+        booksPerPage: 10,
+        inFlight: true
+      };
+
+      this.changePage = this.changePage.bind(this);
+      this.changeBooksPerPage = this.changeBooksPerPage.bind(this);
+    }
+
+    async componentWillMount() {
+      // Initial fetching of books
+      const quantity = 200;
+      const response = await fetch(`https://fakerapi.it/api/v1/books?_quantity=${quantity}`);
+      const payload = await response.json();
+      const books = payload.data;
+      this.setState({
+        books,
+        inFlight: false,
+        totalPages: _calcPages(books.length, this.state.booksPerPage)
+      });
+    }
+
+    changePage(e) {
+      e.preventDefault();
+      const newPageNum = e.target.dataset.page;
+
+      if (newPageNum > 0 && newPageNum <= this.state.totalPages) {
+        this.setState({pageNum: parseInt(newPageNum)});
+      }
+    }
+
+    changeBooksPerPage(e) {
+      const newBooksPerPage = e.target.value;
+
+      this.setState({
+        pageNum: 1, // Need to reset to 1 given various other recalculations
+        booksPerPage: parseInt(newBooksPerPage),
+        totalPages: _calcPages(this.state.books.length, newBooksPerPage),
+      });
+    }
+
+    render() {
+      const {books, booksPerPage, totalPages, pageNum, inFlight} = this.state;
+
+      if (inFlight) {
+        return (<div>Fetching Books</div>);
+      }
+
+      // Use this.state.pageNum to determine subset of this.state.books array
+      const end = (booksPerPage * pageNum);
+      const beg = end - booksPerPage;
+      const bookSubset = books.slice(beg, end);
+
+      return (
+        <div className='container'>
+          <FetchControls booksPerPage={booksPerPage} changeFn={this.changeBooksPerPage} />
+          <PageControls totalPages={totalPages} pageNum={pageNum} changePageFn={this.changePage} />
+          <section className='book-range'>Showing books: {beg + 1} - {end}</section>
+          <BookList books={bookSubset} buildFn={_buildBook} />
+        </div>
+      );
+    }
+  }
+
+
+  ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+<style>
+  :root {
+    margin: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+
+  }
+
+  .container {
+    color: #000000;
+    width: 800px;
+    font-family: sans-serif, arial;
+    margin-inline: auto;
+  }
+
+  .fetch-controls {
+    margin-block: 1.4rem;
+    text-align: right;
+  }
+
+  .page-controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .page-link {
+    padding: 0.5rem;
+    text-decoration: none;
+  }
+
+  .page-btn {
+    padding-block: 0.5rem;
+    padding-inline: 1rem;
+    font-size: 1rem;
+  }
+
+  .page-link.set {
+    font-weight: bold;
+  }
+
+  .book-range {
+    color: #A4A4A4;
+    padding: 0.8rem;
+    margin-top: 1.4rem;
+    border-radius: 4px;
+    border: 1px solid #D8D8D8;
+  }
+
+  .book-list {
+    display: flex;
+    background-color: #A4A4A4;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .book {
+    gap: 1rem;
+    display: flex;
+    padding-block: 1rem;
+    background-color: #FFFFFF;
+  }
+
+  .book__meta {
+    display: flex;
+    font-weight: bold;
+    flex-direction: column;
+    justify-content: space-evenly;
+  }
+
+  .book__meta-title {
+    font-size: 1rem;
+  }
+
+  .book__meta-origins {
+    font-size: 0.85rem;
+  }
+
+  .book__meta-desc {
+    font-size: 0.7rem;
+  }
+
+</style>
+</html>
+
+<!--
+Container that holds...
+1. "Fetch" Controls -- available per-page quantities, sort by publish date asc/desc, toggle List | Grid, date range inputs, phrase search
+2. List of Books
+3. "Page" Controls
+
+----------------------------------------------------------------------------------------------------------------------------------------------
+
+Primary Priority
+1. Skeleton & wiring up to store, fetch, and render book information
+2. For Page Controls: Calculate total pages, render page numbers, and allow navigation between pages (left & right button, and clicking page #s)
+
+Secondary Priority
+1. Provide & allow 'per_page' selections
+2. Provide & allow ordering by publish date asc & desc
+
+Tertiary Priority
+1. Allow rendering to be toggled between list & grid
+2. Allow Phrase search
+2. Provide constraint of showing only 6 page links when 6+ pages-worth of books exists
+  - Should build-in logic that accomodates book list <, ===, or > 6 pages-worth of books, i.e. 2 pages worth of books should NOT have 6 page links!
+
+-->
